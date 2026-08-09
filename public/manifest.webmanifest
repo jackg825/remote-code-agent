@@ -1,0 +1,17 @@
+{
+  "name": "Remote Code Agent",
+  "short_name": "Remote Code",
+  "description": "Mobile terminal for Claude Code and Codex",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d0b",
+  "theme_color": "#090d0b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

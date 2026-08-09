@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#090d0b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Remote Code" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/app.css" />
+    <title>Remote Code</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="identity">
+          <span class="mark" aria-hidden="true">&gt;_</span>
+          <div class="title">
+            <span class="title-prefix">Remote Code · </span>
+            <span id="session-name" class="session">main</span>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button
+            id="terminal-width"
+            class="width-toggle"
+            type="button"
+            aria-pressed="false"
+            title="切換終端機欄寬"
+          >
+            自動
+          </button>
+          <button
+            id="locale-toggle"
+            class="locale-toggle"
+            type="button"
+            data-i18n="localeSwitch"
+            data-i18n-title="localeSwitchTitle"
+            title="切換成英文"
+          >
+            EN
+          </button>
+          <span
+            id="connection-status"
+            class="connection"
+            data-state="connecting"
+            data-i18n="connecting"
+          >
+            連線中
+          </span>
+        </div>
+      </header>
+
+      <nav
+        class="session-bar"
+        aria-label="Session 分頁"
+        data-i18n-aria-label="sessionTabsLabel"
+      >
+        <div id="session-tabs" class="session-tabs" role="tablist"></div>
+        <button
+          id="add-session"
+          class="add-session"
+          type="button"
+          aria-label="新增 session"
+          data-i18n-aria-label="addSession"
+          data-i18n-title="addSession"
+          title="新增 session"
+        >
+          +
+        </button>
+      </nav>
+
+      <section
+        id="terminal-shell"
+        class="terminal-shell"
+        aria-label="遠端終端機"
+        data-i18n-aria-label="remoteTerminal"
+      >
+        <div id="terminal-views" class="terminal-views"></div>
+      </section>
+
+      <nav class="keybar" aria-label="終端機快捷列" data-i18n-aria-label="terminalShortcuts">
+        <button id="quick-claude" class="key agent-quick" type="button">Claude · Auto</button>
+        <button id="quick-codex" class="key agent-quick" type="button">Codex · Auto</button>
+        <button id="agent-settings" class="key" type="button" data-i18n="agentModes">模式</button>
+        <button class="key" type="button" data-key="&#13;">Enter</button>
+        <button id="pick-files" class="key" type="button" data-i18n="uploadFiles">上傳</button>
+        <span class="keybar-divider" aria-hidden="true"></span>
+        <button id="modifier-ctrl" class="key" type="button" aria-pressed="false">Ctrl</button>
+        <button id="modifier-alt" class="key" type="button" aria-pressed="false">Alt</button>
+        <button class="key" type="button" data-key="&#27;">Esc</button>
+        <button class="key" type="button" data-key="&#9;">Tab</button>
+        <button class="key" type="button" data-key="&#27;[D" aria-label="向左" data-i18n-aria-label="left">←</button>
+        <button class="key" type="button" data-key="&#27;[A" aria-label="向上" data-i18n-aria-label="up">↑</button>
+        <button class="key" type="button" data-key="&#27;[B" aria-label="向下" data-i18n-aria-label="down">↓</button>
+        <button class="key" type="button" data-key="&#27;[C" aria-label="向右" data-i18n-aria-label="right">→</button>
+        <button class="key danger" type="button" data-key="&#3;">Ctrl-C</button>
+        <button class="key" type="button" data-key="&#4;">Ctrl-D</button>
+        <button class="key" type="button" data-key="&#26;">Ctrl-Z</button>
+        <button id="paste" class="key" type="button" data-i18n="paste">貼上</button>
+        <button id="copy" class="key" type="button" data-i18n="copy">複製</button>
+      </nav>
+
+      <input id="file-input" type="file" multiple hidden />
+
+      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+
+      <section class="composer-shell" aria-label="指令輸入區" data-i18n-aria-label="composerLabel">
+        <textarea
+          id="composer"
+          rows="1"
+          placeholder="輸入指令或使用語音輸入…"
+          data-i18n-placeholder="composerPlaceholder"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        ></textarea>
+        <button
+          id="insert-command"
+          class="composer-action"
+          type="button"
+          data-i18n="insertCommand"
+          data-i18n-title="insertCommandTitle"
+          title="輸入到終端機，但不按下 Enter"
+        >
+          輸入
+        </button>
+        <button
+          id="run-command"
+          class="composer-action primary"
+          type="button"
+          data-i18n="runCommand"
+          data-i18n-title="runCommandTitle"
+          title="送到終端機並按下 Enter"
+        >
+          執行
+        </button>
+      </section>
+
+      <div id="agent-panel-overlay" class="panel-overlay" hidden>
+        <section
+          class="agent-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="agent-panel-title"
+        >
+          <header class="agent-panel-header">
+            <div>
+              <h2 id="agent-panel-title" data-i18n="agentPanelTitle">AI 程式助理模式</h2>
+              <p data-i18n="agentPanelDescription">選好模式後，即可從快捷列快速開啟或切換。</p>
+            </div>
+            <button id="close-agent-panel" class="panel-close" type="button" data-i18n="close">關閉</button>
+          </header>
+          <div
+            class="agent-tabs"
+            role="tablist"
+            aria-label="AI 程式助理"
+            data-i18n-aria-label="agentTabsLabel"
+          >
+            <button
+              class="agent-tab active"
+              type="button"
+              role="tab"
+              data-agent-choice="claude"
+              aria-selected="true"
+            >
+              Claude Code
+            </button>
+            <button
+              class="agent-tab"
+              type="button"
+              role="tab"
+              data-agent-choice="codex"
+              aria-selected="false"
+            >
+              Codex CLI
+            </button>
+          </div>
+          <div id="agent-mode-options" class="agent-mode-options"></div>
+          <p id="agent-mode-help" class="agent-mode-help"></p>
+        </section>
+      </div>
+
+      <div id="session-panel-overlay" class="panel-overlay" hidden>
+        <section
+          class="session-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="session-panel-title"
+        >
+          <header class="agent-panel-header">
+            <div>
+              <h2 id="session-panel-title" data-i18n="sessionPanelTitle">新增 session</h2>
+              <p data-i18n="sessionPanelDescription">建立或接回一個持久化 tmux session。</p>
+            </div>
+            <button
+              id="close-session-panel"
+              class="panel-close"
+              type="button"
+              data-i18n="close"
+            >
+              關閉
+            </button>
+          </header>
+          <label class="session-name-label" for="session-input" data-i18n="sessionNameLabel">
+            Session 名稱
+          </label>
+          <input
+            id="session-input"
+            class="session-input"
+            type="text"
+            maxlength="64"
+            placeholder="限英數字、_、-，最多 64 字元"
+            data-i18n-placeholder="newSessionPrompt"
+            autocapitalize="off"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+          />
+          <p id="session-name-error" class="session-name-error" role="alert" hidden></p>
+          <button
+            id="create-session"
+            class="composer-action primary create-session"
+            type="button"
+            data-i18n="createSession"
+          >
+            開啟 session
+          </button>
+        </section>
+      </div>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

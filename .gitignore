@@ -1,0 +1,40 @@
+# Dependencies and generated output
+node_modules/
+dist/
+.wrangler/
+public/app.js
+public/app.js.map
+public/app.css
+public/app.css.map
+.remote-code-agent/
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.npmrc
+.netrc
+*.token
+
+# Deployment-specific Cloudflare configuration and credentials
+wrangler.production.jsonc
+wrangler.*.private.jsonc
+.cloudflared/
+cloudflared/
+cloudflared-config.yml
+cloudflared-config.yaml
+cloudflared-credentials.json
+cert.pem
+*.key
+*.pem
+*.p12
+*.pfx
+service-account*.json
+*-service-account.json
+
+# Local operating-system and tool artifacts
+*.log
+.DS_Store

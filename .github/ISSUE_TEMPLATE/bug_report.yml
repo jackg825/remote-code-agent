@@ -1,0 +1,62 @@
+name: Bug report
+description: 回報可重現的錯誤
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        安全漏洞請依 SECURITY.md 私下回報。請勿貼上真實 hostname、email、token、credential 或未遮蔽的 production log。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 問題描述
+      description: 實際發生什麼，以及你預期會發生什麼？
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 重現步驟
+      description: 請提供最小且可重現的步驟，使用 example.com 等範例值。
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: 版本或 commit
+      placeholder: commit SHA 或 branch
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Backend 平台
+      options:
+        - Linux
+        - macOS
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 已遮蔽的日誌
+      description: 選填。請先移除個資、hostname、ID、token 與 credential。
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前確認
+      options:
+        - label: 我已確認這不是需要私下回報的安全漏洞。
+          required: true
+        - label: 我已移除所有 secret、個資與可識別部署的值。
+          required: true

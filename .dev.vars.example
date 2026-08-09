@@ -1,0 +1,4 @@
+# Local Worker development bypasses Access only on localhost and does not use these.
+# Production values must be added with `wrangler secret put`, never committed here.
+ACCESS_CLIENT_ID=local-development
+ACCESS_CLIENT_SECRET=local-development
