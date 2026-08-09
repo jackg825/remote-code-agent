@@ -1,51 +1,51 @@
-# Remote Code Agent：AI Agent 指引
+# Remote Code Agent: AI Agent Guide
 
-本文件只給 AI Agent 使用。人類部署與操作說明以 [`README.md`](README.md) 為準。
+This file is for AI agents only. Human deployment and operating instructions are maintained in [`README.md`](README.md).
 
-## 適用範圍
+## Scope
 
-在此 repo 進行程式修改、本機驗證、Cloudflare 部署、部署後驗收或故障診斷時，先遵守本文件，再讀取與任務相關的 README 章節。除非使用者明確要求，不要把「檢查」或「診斷」擴大成部署、建立外部資源或修改既有基礎設施。
+When modifying code, validating locally, deploying to Cloudflare, performing post-deployment acceptance, or diagnosing this repository, follow this file first and then read the relevant README sections. Unless the user explicitly requests it, do not expand an inspection or diagnosis into a deployment, external-resource creation, or existing-infrastructure change.
 
-本專案只使用 Cloudflare Workers、Static Assets、Tunnel 與 Access；不得建立 Firebase、Firestore 或其他資料庫資源。
+This project uses only Cloudflare Workers, Static Assets, Tunnel, and Access. Do not create Firebase, Firestore, or other database resources.
 
-## 閱讀順序
+## Reading order
 
-1. 讀取 README 的「架構與安全模型」及「機密與個資清單」。
-2. 檢查 `wrangler.jsonc`、`.gitignore`、`package.json` 與任務涉及的 source files。
-3. 部署 backend 前，依目標作業系統讀取對應 installer：
-   - Linux：`scripts/install-user-service.sh`
-   - macOS backend：`scripts/install-macos-service.sh`
-   - macOS Tunnel：`scripts/install-macos-tunnel-service.sh`
-4. 部署或驗收時，再依 README 的編號順序讀取「事前需求」至「8. 驗證完整路徑」。
-5. 驗證實際使用行為時，讀取 README 的「手機操作」、「AI 程式助理模式」、「手機上傳檔案」與「多個持久化 session」。
+1. Read the README sections [Architecture and security model](README.md#architecture-and-security-model) and [Secrets and personal data](README.md#secrets-and-personal-data).
+2. Inspect `wrangler.jsonc`, `.gitignore`, `package.json`, and the source files relevant to the task.
+3. Before deploying the backend, read the installer for the target operating system:
+   - Linux: `scripts/install-user-service.sh`
+   - macOS backend: `scripts/install-macos-service.sh`
+   - macOS Tunnel: `scripts/install-macos-tunnel-service.sh`
+4. For deployment or acceptance work, follow the README in order from [Prerequisites](README.md#prerequisites) through [8. Verify the complete path](README.md#8-verify-the-complete-path).
+5. To validate real user behavior, read [Mobile usage](README.md#mobile-usage), [AI coding-agent modes](README.md#ai-coding-agent-modes), [Mobile file uploads](README.md#mobile-file-uploads), and [Multiple persistent sessions](README.md#multiple-persistent-sessions).
 
-## 開始部署前的必要資訊
+## Required information before deployment
 
-部署前必須由使用者指定或確認以下資料，不得從範例值猜測：
+The user must specify or confirm all of the following. Never infer production values from examples:
 
-- 目標 instance 與作業系統
+- Target instance and operating system
 - `PUBLIC_HOSTNAME`
 - `ORIGIN_HOSTNAME`
 - `ACCESS_TEAM_DOMAIN`
-- 公開入口 Access application 的 `ACCESS_AUD`
+- `ACCESS_AUD` for the public-entry Access application
 - `WORKSPACE_DIR`
-- Cloudflare account，以及要建立或沿用的 Tunnel 名稱
-- 公開入口允許哪些 email、群組或 IdP identity
+- Cloudflare account and the Tunnel name to create or reuse
+- Email addresses, groups, or IdP identities allowed through the public entry point
 
-若任一選擇會改變資源歸屬、安全邊界或費用，而本機與 Cloudflare 現況無法安全判定，先說明缺少的資訊並請使用者決定。
+If a choice changes resource ownership, the security boundary, or cost, and the local or Cloudflare state does not make the answer safe to infer, explain what is missing and ask the user to decide.
 
-## 一般開發與驗證
+## General development and validation
 
-修改前先理解現有行為並檢查 worktree，保留使用者的既有變更。採用符合任務的最小修改，並執行最窄而有意義的驗證。
+Before editing, understand the current behavior and inspect the worktree. Preserve existing user changes. Make the smallest complete change for the task and run the narrowest meaningful verification.
 
-完整檢查：
+Full local verification:
 
 ```bash
 npm ci
 npm run check
 ```
 
-本機開發需要兩個長時間執行的程序：
+Local development requires two long-running processes:
 
 ```bash
 # Terminal 1
@@ -55,67 +55,67 @@ npm run dev
 npm run dev:cloudflare
 ```
 
-不得因 README 提供部署命令，就在未獲使用者部署要求時執行外部部署或建立 Cloudflare 資源。
+README deployment commands are documentation, not deployment authorization. Do not deploy or create Cloudflare resources without an explicit user request.
 
-## 部署工作流程
+## Deployment workflow
 
-收到明確部署要求後，依序執行：
+After receiving an explicit deployment request, proceed in this order:
 
-1. 列出預計建立或修改的 backend service、Tunnel、hostname、Access application、Worker 與 custom domain 名稱，讓使用者知道變更範圍。
-2. 執行 `npm ci && npm run check`。
-3. 安裝 backend，確認它只監聽 `127.0.0.1`，再驗證 loopback `/healthz`。
-4. 建立或使用本次任務指定的專用 Tunnel；不得修改其他既有 Tunnel。
-5. 由使用者完成需要身份判斷的兩個 Access applications 與最小權限 policies。
-6. 從 `wrangler.jsonc` 建立已被 Git 忽略的 `wrangler.production.jsonc`，填入已確認的 production 設定。
-7. 透過 `wrangler secret put` 的互動提示寫入 Worker secrets。
-8. 執行 `npm run deploy:dry-run`；成功後才執行 `npm run deploy:cloudflare`。
-9. 依序驗證 backend → Tunnel → origin Access → public Access → Worker → WebSocket → tmux reconnect。
-10. 檢查 ignored files、staged diff 與 secret scan，確認沒有 private file 或 secret 進入 Git。
+1. List the backend service, Tunnel, hostnames, Access applications, Worker, and custom domain that will be created or changed so the user can verify the scope.
+2. Run `npm ci && npm run check`.
+3. Install the backend, confirm that it listens only on `127.0.0.1`, and verify the loopback `/healthz` endpoint.
+4. Create or reuse the dedicated Tunnel specified for this task. Do not modify another existing Tunnel.
+5. Have the user complete both identity-sensitive Access applications and least-privilege policies.
+6. Copy `wrangler.jsonc` to the Git-ignored `wrangler.production.jsonc` and enter only confirmed production settings.
+7. Write Worker secrets through the interactive `wrangler secret put` prompt.
+8. Run `npm run deploy:dry-run`; only after it succeeds, run `npm run deploy:cloudflare`.
+9. Validate backend → Tunnel → origin Access → public Access → Worker → WebSocket → tmux reconnect, in that order.
+10. Inspect ignored files, the staged diff, and secret-scan results to confirm that no private file or secret can enter Git.
 
-## 必須交回人類操作的步驟
+## Steps that require human control
 
-遇到以下情況時停下來，清楚說明要使用者完成什麼，且不要要求使用者把 secret 貼進對話：
+Stop and clearly tell the user what they must complete when a step involves any of the following. Never ask the user to paste a secret into the conversation:
 
-- Cloudflare、IdP、Claude Code 或 Codex 的登入及 MFA
-- 一次性顯示的 Access Client Secret 或 Tunnel connector token
-- `wrangler secret put` 的 secret 輸入
-- Access allow policy 的 email、群組或 identity 選擇
-- 需要系統管理員權限，或會影響任務範圍外既有資源的操作
+- Cloudflare, IdP, Claude Code, or Codex sign-in and MFA
+- An Access Client Secret or Tunnel connector token shown only once
+- Secret entry for `wrangler secret put`
+- Email, group, or identity selection for an Access allow policy
+- Administrator privileges or changes to resources outside the task scope
 
-可在使用者完成後繼續做不會揭露 secret 的狀態與行為驗證。
+After the user finishes, continue with status and behavior checks that do not reveal the secret.
 
-## 使用與驗收
+## Usage and acceptance
 
-部署完成不等於使用驗收完成。依 README「8. 驗證完整路徑」檢查：
+A successful deployment is not complete user acceptance. Follow [8. Verify the complete path](README.md#8-verify-the-complete-path) and verify:
 
-1. instance 的 loopback health 成功。
-2. origin 未帶 service token 時被拒絕，而不是回 backend `200`。
-3. public hostname 未登入時導向 Access 或被拒絕。
-4. Tunnel connector 狀態為 `Healthy`。
-5. 使用者登入手機入口後，能執行 shell、啟動 Claude Code 或 Codex、操作控制鍵並開啟外部 URL。
-6. 關閉頁面再連線後，原 tmux session 仍存在。
-7. 若任務包含檔案上傳、多 session 或權限模式，分別驗證相關 README 行為。
+1. The instance loopback health check succeeds.
+2. The origin rejects requests without the service token instead of returning backend `200`.
+3. The public hostname redirects unauthenticated users to Access or rejects them.
+4. The Tunnel connector reports `Healthy`.
+5. After signing in from a phone, the user can run a shell, start Claude Code or Codex, use control keys, and open external URLs.
+6. Closing and reconnecting to the page preserves the original tmux session.
+7. If the task includes uploads, multiple sessions, or permission modes, verify each corresponding README behavior separately.
 
-需要使用者瀏覽器登入或親自操作的項目，請提供精確步驟並請使用者回報結果；不得在未驗證時宣稱成功。
+When a check requires the user's browser session or physical interaction, provide exact steps and ask them to report the result. Never claim success for a check that was not performed.
 
-## 成功條件
+## Success criteria
 
-- backend 只監聽 `127.0.0.1`，instance 不開 inbound port。
-- public hostname 由 Cloudflare Worker 提供前端，並受使用者 Access policy 保護。
-- origin hostname 經 Cloudflare Tunnel，只接受 Worker 的 Service Auth token。
-- 手機能操作真實 tmux PTY，重新連線後 session 仍存在。
-- `npm run check` 與 `npm run deploy:dry-run` 成功。
-- 沒有 secret、private production config 或可識別部署的資料進入 Git 或回覆內容。
+- The backend listens only on `127.0.0.1`, and the instance exposes no inbound port.
+- The public hostname serves the frontend through a Cloudflare Worker and is protected by the user Access policy.
+- The origin hostname is reached through Cloudflare Tunnel and accepts only the Worker's Service Auth token.
+- A phone can operate a real tmux PTY, and reconnecting preserves the session.
+- `npm run check` and `npm run deploy:dry-run` succeed.
+- No secret, private production configuration, or deployment-identifying data enters Git or the response.
 
-## 安全限制
+## Security constraints
 
-- 不得輸出、記錄、commit 或回傳 password、API token、Tunnel token、Access Client Secret、Claude/Codex credential、email、實際網域、account ID 或 AUD。
-- production 值只能放在已被 `.gitignore` 排除的 `wrangler.production.jsonc`；不得用 `git add -f` 加入任何 private file。
-- Worker secrets 只能透過 `wrangler secret put` 的互動提示輸入；不得把 secret 放進 command argument、shell history、文件或 source code。
-- 不得修改任務範圍外既有的 Tunnel、DNS、Access policy、Worker、service 或使用者檔案。
-- 不得放寬 backend 的 loopback binding、origin Service Auth 或 public Access policy 來排除連線問題。
+- Never print, log, commit, or return a password, API token, Tunnel token, Access Client Secret, Claude/Codex credential, email address, real domain, account ID, or AUD.
+- Production values belong only in the Git-ignored `wrangler.production.jsonc`. Never use `git add -f` for a private file.
+- Worker secrets must be entered only through the interactive `wrangler secret put` prompt. Never place a secret in a command argument, shell history, documentation, or source code.
+- Do not modify an unrelated Tunnel, DNS record, Access policy, Worker, service, or user file.
+- Do not weaken loopback binding, origin Service Auth, or the public Access policy to troubleshoot a connection.
 
-提交或交付前至少檢查：
+Before committing or handing off, run at least:
 
 ```bash
 git status --short --ignored
@@ -123,15 +123,15 @@ git diff --cached
 git grep --cached -n -I -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|[[:xdigit:]]{32}\.access|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}' -- .
 ```
 
-最後一個命令沒有輸出才是預期結果。
+The final command should print nothing.
 
-## 回報格式
+## Reporting format
 
-部署或驗收後只回報：
+After deployment or acceptance, report only:
 
-- 建立或修改的資源名稱，不包含 ID、實際 hostname 或 secret
-- 各層驗證的成功、失敗或等待使用者操作狀態
-- 實際執行的測試與結果
-- 尚未驗證的風險與下一個必要動作
+- Names of resources created or changed, without IDs, real hostnames, or secrets
+- Success, failure, or waiting-for-user status for each layer
+- Tests actually run and their results
+- Unverified risks and the next required action
 
-不得在回報中重現 production config 或敏感 CLI 輸出。
+Never reproduce production configuration or sensitive CLI output in the report.
