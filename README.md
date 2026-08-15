@@ -1,66 +1,68 @@
 # Remote Code Agent
 
-在沒有 public IP 的 Linux instance 或 Mac 上執行真實 PTY，透過 Cloudflare Tunnel 與 Cloudflare Access，從手機安全操作 Claude Code、Codex CLI、vim、tmux 和一般 shell。前端也部署在 Cloudflare Workers Static Assets；不使用 Firebase、Firestore 或其他資料庫。
+**English** · [繁體中文](docs/README.zh-TW.md) · [简体中文](docs/README.zh-CN.md) · [日本語](docs/README.ja.md)
 
-手機端支援觸控快捷鍵、一般鍵盤、系統語音輸入，以及在文字框中使用 Wispr Flow 後「插入」或「執行」。終端連線中斷不會結束工作，因為每個工作階段都保留在 instance 的 tmux 裡。
+Run a real PTY on a Linux instance or Mac without a public IP, then securely operate Claude Code, Codex CLI, vim, tmux, and a regular shell from your phone through Cloudflare Tunnel and Cloudflare Access. The frontend is deployed with Cloudflare Workers Static Assets. No Firebase, Firestore, or other database is required.
 
-手機快捷列也能直接上傳檔案，並一鍵開啟或切換 Claude Code、Codex CLI。每一種 agent／權限模式使用獨立的 tmux window，因此切換時不會中止另一個仍在執行的 agent。
+The mobile client supports touch shortcuts, a regular keyboard, system dictation, and text composed with tools such as Wispr Flow. Terminal disconnects do not stop work because every session remains attached to tmux on the instance.
 
-## 文件閱讀指引
+You can upload files from the mobile toolbar and open or switch between Claude Code and Codex CLI with one tap. Each agent and permission mode uses a separate tmux window, so switching modes does not interrupt another agent that is still running.
 
-這份 README 是給人類部署者與使用者看的主要文件。請依目的閱讀：
+## Documentation map
 
-| 對象與目的 | 指引 |
+This is the canonical guide for human operators and users. Translations are provided for convenience; if a translation differs from this file, follow the English deployment and security guidance.
+
+| Audience and goal | Start here |
 | --- | --- |
-| 人類：了解系統與安全邊界 | 從「[架構與安全模型](#架構與安全模型)」開始 |
-| 人類：部署服務 | 依「[事前需求](#事前需求)」至「[8. 驗證完整路徑](#8-驗證完整路徑)」依序操作 |
-| 人類：使用手機介面 | 閱讀「[手機操作](#手機操作)」與「[AI 程式助理模式](#ai-程式助理模式)」 |
-| 人類：開發或排錯 | 閱讀「[本機開發](#本機開發)」與「[故障排除](#故障排除)」 |
-| AI Agent：開發、部署或驗收 | **先讀 [`AGENTS.md`](AGENTS.md)**，再依其中的閱讀順序查閱本 README；不要直接把範例值當成部署授權或實際設定 |
+| Human: understand the system and trust boundaries | [Architecture and security model](#architecture-and-security-model) |
+| Human: deploy the service | Follow [Prerequisites](#prerequisites) through [8. Verify the complete path](#8-verify-the-complete-path) in order |
+| Human: use the mobile interface | [Mobile usage](#mobile-usage) and [AI coding-agent modes](#ai-coding-agent-modes) |
+| Human: develop or troubleshoot | [Local development](#local-development) and [Troubleshooting](#troubleshooting) |
+| AI agent: develop, deploy, or validate | Read [`AGENTS.md`](AGENTS.md) first, then follow its reading order for this README |
 
-README 中的指令預設由人類判斷後執行。AI Agent 必須遵守 `AGENTS.md` 的安全限制、人工操作停駐點與回報格式。
+Commands in this README are intended for a human to review before running. AI agents must obey the safety limits, human handoff points, and reporting requirements in `AGENTS.md`. Example values are not deployment authorization or production configuration.
 
-## 架構與安全模型
+## Architecture and security model
 
 ```mermaid
 flowchart LR
-  P["手機瀏覽器<br/>鍵盤 / Wispr Flow"] --> UA["Cloudflare Access<br/>使用者登入"]
-  UA --> W["Cloudflare Worker<br/>FE + Access JWT 驗證"]
-  W -->|"Service Token"| OA["Cloudflare Access<br/>Service Auth"]
+  P["Mobile browser<br/>Keyboard / dictation"] --> UA["Cloudflare Access<br/>User sign-in"]
+  UA --> W["Cloudflare Worker<br/>Frontend + Access JWT validation"]
+  W -->|"Service token"| OA["Cloudflare Access<br/>Service Auth"]
   OA --> T["Cloudflare Tunnel"]
-  T --> C["instance 上的 cloudflared"]
+  T --> C["cloudflared on the instance"]
   C -->|"127.0.0.1:7681"| B["PTY / WebSocket backend"]
-  B --> M["持久化 tmux session"]
+  B --> M["Persistent tmux session"]
   M --> CLI["Claude Code / Codex / shell"]
 ```
 
-部署時使用兩個不同 hostname：
+The deployment uses two distinct hostnames:
 
-- `code.example.com`：手機入口。Worker 提供前端並要求使用者通過 Access。
-- `terminal-origin.example.com`：Tunnel origin。只允許 Worker 使用獨立的 Access service token 存取。
+- `code.example.com` is the mobile entry point. The Worker serves the frontend and requires the user to pass Access authentication.
+- `terminal-origin.example.com` is the Tunnel origin. It accepts only the Worker's dedicated Access service token.
 
-instance 不提供前端、不開 inbound port，backend 固定監聽 `127.0.0.1`。能通過 `code.example.com` Access policy 的人，等同能操作執行 backend 的 Unix 帳號，因此公開入口必須只允許可信任的身份。
+The instance does not serve the frontend or expose an inbound port. The backend is fixed to `127.0.0.1`. Anyone allowed through the `code.example.com` Access policy can effectively operate the Unix account that runs the backend, so restrict the public entry point to trusted identities.
 
-## 事前需求
+## Prerequisites
 
-- 一個由 Cloudflare 管理 DNS 的網域
-- Cloudflare Zero Trust organization
-- Node.js 22.20.0 以上與 npm
-- instance 上的 `tmux`、編譯工具，以及已安裝並登入的 `claude` 和／或 `codex`
-- 開發／部署電腦已執行 `npx wrangler login`
-- instance 能主動連線到 Internet；不需要 public IP
+- A domain whose DNS is managed by Cloudflare
+- A Cloudflare Zero Trust organization
+- Node.js 22.20.0 or newer and npm
+- `tmux`, build tools, and an authenticated `claude` and/or `codex` installation on the instance
+- `npx wrangler login` completed on the development or deployment machine
+- Outbound Internet access from the instance; no public IP is required
 
-先決定自己的值，後續不要直接沿用範例：
+Choose your own values before continuing. Do not reuse the examples unchanged:
 
-| 名稱 | 範例 | 說明 |
+| Name | Example | Purpose |
 | --- | --- | --- |
-| `PUBLIC_HOSTNAME` | `code.example.com` | 手機入口與 Worker custom domain |
+| `PUBLIC_HOSTNAME` | `code.example.com` | Mobile entry point and Worker custom domain |
 | `ORIGIN_HOSTNAME` | `terminal-origin.example.com` | Cloudflare Tunnel hostname |
 | `ACCESS_TEAM_DOMAIN` | `https://your-team.cloudflareaccess.com` | Zero Trust team domain |
-| `ACCESS_AUD` | `<PUBLIC_ACCESS_AUD>` | 公開入口 Access application 的 AUD |
-| `WORKSPACE_DIR` | `/home/you/workspace` | 新 tmux session 的起始目錄 |
+| `ACCESS_AUD` | `<PUBLIC_ACCESS_AUD>` | AUD of the public-entry Access application |
+| `WORKSPACE_DIR` | `/home/you/workspace` | Starting directory for new tmux sessions |
 
-## 1. 取得專案並驗證
+## 1. Get the project and verify it
 
 ```bash
 git clone <REPOSITORY_URL> remote-code-agent
@@ -69,20 +71,20 @@ npm ci
 npm run check
 ```
 
-`npm run check` 會檢查 Wrangler types、TypeScript、protocol tests、Workers runtime tests，以及 server/client build。
+`npm run check` verifies Wrangler-generated types, TypeScript, protocol tests, Workers runtime tests, and the server/client builds.
 
-## 2. 安裝 instance backend
+## 2. Install the instance backend
 
-### Linux（systemd user service）
+### Linux: systemd user service
 
-Ubuntu／Debian 可先安裝依賴：
+On Ubuntu or Debian, install the runtime dependencies first:
 
 ```bash
 sudo apt update
 sudo apt install tmux build-essential python3
 ```
 
-從 repo 目錄執行：
+From the repository directory:
 
 ```bash
 WORKSPACE_DIR=/home/you/workspace \
@@ -94,9 +96,9 @@ systemctl --user status remote-code-agent
 curl http://127.0.0.1:7681/healthz
 ```
 
-### macOS（LaunchAgent）
+### macOS: LaunchAgent
 
-先確認 Node.js、npm 和 tmux 都在目前的 `PATH`，再執行：
+Make sure Node.js, npm, and tmux are available on the current `PATH`, then run:
 
 ```bash
 WORKSPACE_DIR="$HOME/Workspace" \
@@ -107,7 +109,7 @@ launchctl print "gui/$(id -u)/io.remote-code-agent.backend"
 curl http://127.0.0.1:7681/healthz
 ```
 
-若 Tunnel connector 也執行在同一台 Mac，先完成 `npx wrangler login`，再把既有 Tunnel 安裝成會隨登入自動啟動的 LaunchAgent：
+If the Tunnel connector also runs on the same Mac, complete `npx wrangler login` and install an existing Tunnel as a login LaunchAgent:
 
 ```bash
 TUNNEL_NAME=remote-code-agent-origin \
@@ -117,32 +119,32 @@ launchctl print "gui/$(id -u)/io.remote-code-agent.tunnel"
 npx wrangler tunnel info remote-code-agent-origin
 ```
 
-Linux 與 macOS backend 安裝程式都會保留目前的 `PATH`，讓 tmux shell 能找到 Homebrew、nvm、Claude Code 與 Codex CLI。健康檢查應回傳 `{"ok":true}`。macOS Tunnel 安裝程式使用目前使用者的 Wrangler 登入狀態啟動既有 Tunnel，不會把 connector token 寫入 plist。
+Both backend installers preserve the current `PATH`, allowing tmux shells to find Homebrew, nvm, Claude Code, and Codex CLI. The health check should return `{"ok":true}`. The macOS Tunnel installer uses the current user's Wrangler login to start an existing Tunnel and does not write a connector token into the plist.
 
-### Backend 設定
+### Backend configuration
 
-| Environment variable | 預設值 | 用途 |
+| Environment variable | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `7681` | loopback HTTP port |
-| `WORKSPACE_DIR` | repo 目錄 | 新 session 起始目錄 |
-| `DEFAULT_SESSION` | `main` | URL 未指定 session 時使用的名稱 |
-| `PUBLIC_HOSTNAME` | 空白 | Worker hostname；production 必填 |
+| `PORT` | `7681` | Loopback HTTP port |
+| `WORKSPACE_DIR` | Repository directory | Starting directory for new sessions |
+| `DEFAULT_SESSION` | `main` | Session used when the URL has no session parameter |
+| `PUBLIC_HOSTNAME` | Empty | Worker hostname; required in production |
 | `TMUX_BIN` | `tmux` | tmux executable |
-| `TMUX_SOCKET` | `remote-code-agent` | 專用 tmux server 名稱 |
-| `TMUX_CONFIG` | `config/tmux.conf` | 可選的 tmux config 路徑 |
-| `UPLOAD_DIR` | `${WORKSPACE_DIR}/.remote-code-agent/uploads` | 手機上傳檔案的儲存目錄 |
-| `MAX_UPLOAD_BYTES` | `20971520` | 單一檔案上限；最大可設定為 100 MiB |
+| `TMUX_SOCKET` | `remote-code-agent` | Dedicated tmux server name |
+| `TMUX_CONFIG` | `config/tmux.conf` | Optional tmux configuration path |
+| `UPLOAD_DIR` | `${WORKSPACE_DIR}/.remote-code-agent/uploads` | Storage directory for mobile uploads |
+| `MAX_UPLOAD_BYTES` | `20971520` | Per-file limit; configurable up to 100 MiB |
 
-修改 Linux service 後可執行：
+After changing the Linux service configuration:
 
 ```bash
 systemctl --user daemon-reload
 systemctl --user restart remote-code-agent
 ```
 
-## 3. 建立 Cloudflare Tunnel
+## 3. Create the Cloudflare Tunnel
 
-Wrangler 可以建立、列出、檢查與測試執行 Tunnel：
+Wrangler can create, list, inspect, and test-run a Tunnel:
 
 ```bash
 npx wrangler login
@@ -152,63 +154,63 @@ npx wrangler tunnel list
 npx wrangler tunnel info <TUNNEL_ID>
 ```
 
-Wrangler 的 Tunnel commands 目前標示為 experimental。請記下 tunnel UUID，但不要把 credentials、connector token 或 `cert.pem` 加入 repo。
+Wrangler currently marks its Tunnel commands as experimental. Record the Tunnel UUID, but never add credentials, connector tokens, or `cert.pem` to the repository.
 
-接著在 Cloudflare dashboard 的 **Networking → Tunnels** 選擇該 Tunnel，新增 **Published application**：
+In the Cloudflare dashboard, open **Networking → Tunnels**, select the Tunnel, and add a **Published application**:
 
-- Hostname：`terminal-origin.example.com`
-- Service URL：`http://127.0.0.1:7681`
+- Hostname: `terminal-origin.example.com`
+- Service URL: `http://127.0.0.1:7681`
 
-在開發電腦測試 connector：
+Test the connector from the development machine:
 
 ```bash
 npx wrangler tunnel run <TUNNEL_ID>
 ```
 
-正式 instance 請依 Tunnel 頁面提供的 connector 安裝流程，把 `cloudflared` 安裝成 system service。connector token 是 secret：只能在目標主機使用，不要貼進 README、issue、AI 對話、shell script 或 Git。確認 Dashboard 狀態為 `Healthy` 後再繼續。
+For production, use the connector installation flow shown on the Tunnel page to install `cloudflared` as a system service on the instance. The connector token is a secret: use it only on the target host, and never paste it into a README, issue, AI conversation, shell script, or Git. Continue only after the dashboard reports the connector as `Healthy`.
 
-> Wrangler 適合管理 Worker、Static Assets、secrets、部署，以及 Tunnel 的 create/list/info/run。Published application route 和 Access policy 目前用 Dashboard 設定最直接；若要全自動化，可另外使用 Cloudflare API，但仍應透過 secret manager 傳入 API token。
+> Wrangler is suitable for Workers, Static Assets, secrets, deployments, and Tunnel create/list/info/run operations. The dashboard is currently the most direct way to configure Published application routes and Access policies. If you automate them with the Cloudflare API, inject API tokens through a secret manager.
 
-官方文件：[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) 與 [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/)。
+Official documentation: [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) and [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/).
 
-## 4. 用 Access 保護 Tunnel origin
+## 4. Protect the Tunnel origin with Access
 
-先建立只給 Worker 使用的 service token：
+Create a service token used only by the Worker:
 
-1. 到 **Zero Trust → Access controls → Service credentials → Service Tokens**。
-2. 建立一組 token，安全保存只顯示一次的 Client ID 與 Client Secret。
-3. 新增 Self-hosted Access application，domain 設為 `terminal-origin.example.com`。
-4. 新增 policy：Action 選 **Service Auth**，Include 選剛建立的 service token。
-5. 不要新增 `Everyone` 或 bypass policy。
+1. Open **Zero Trust → Access controls → Service credentials → Service Tokens**.
+2. Create a token and securely store the Client ID and Client Secret, which are shown only once.
+3. Add a Self-hosted Access application for `terminal-origin.example.com`.
+4. Add a policy with **Service Auth** as the action and the new service token as the Include rule.
+5. Do not add an `Everyone` or bypass policy.
 
-此 hostname 不供使用者直接登入。未帶正確 service token 的請求必須被拒絕。
+This hostname is not for direct user sign-in. Requests without the correct service token must be rejected.
 
-官方文件：[Access service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)。
+Official documentation: [Access service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
 
-## 5. 建立手機入口 Access application
+## 5. Create the mobile-entry Access application
 
-1. 新增另一個 Self-hosted Access application，domain 設為 `code.example.com`。
-2. 新增 `Allow` policy，只 Include 自己的 email、群組或可信任的 IdP identity。
-3. 記下 application 的 **Application Audience (AUD) Tag**。
-4. 建議縮短 session duration，並在 IdP 啟用 MFA。
+1. Add a separate Self-hosted Access application for `code.example.com`.
+2. Add an `Allow` policy that includes only your email, group, or trusted IdP identity.
+3. Record the application's **Application Audience (AUD) Tag**.
+4. Prefer a short session duration and enable MFA in the IdP.
 
-Worker 除了依賴 Cloudflare Access，還會自行驗證 `Cf-Access-Jwt-Assertion` 的簽章、issuer 與 AUD，之後才會把 WebSocket 代理到 origin。
+In addition to Cloudflare Access enforcement, the Worker validates the signature, issuer, and AUD of `Cf-Access-Jwt-Assertion` before proxying a WebSocket to the origin.
 
-官方文件：[Validate Access tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)。
+Official documentation: [Validate Access tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/).
 
-## 6. 建立不進 Git 的 production 設定
+## 6. Create a production configuration that stays out of Git
 
-repo 中的 `wrangler.jsonc` 是無個資、可公開的本機開發範本。production 設定必須使用被 `.gitignore` 排除的檔案：
+The tracked `wrangler.jsonc` is a sanitized local-development template. Production configuration must use the ignored file:
 
 ```bash
 cp wrangler.jsonc wrangler.production.jsonc
 ```
 
-在 `wrangler.production.jsonc` 做三件事：
+Make three changes in `wrangler.production.jsonc`:
 
-1. 將 `workers_dev` 改成 `false`。
-2. 加入自己的 custom domain route。
-3. 換掉三個 placeholder vars。
+1. Set `workers_dev` to `false`.
+2. Add your custom-domain route.
+3. Replace the placeholder variables.
 
 ```jsonc
 {
@@ -228,132 +230,133 @@ cp wrangler.jsonc wrangler.production.jsonc
 }
 ```
 
-實際檔案仍需保留原範本中的 `main`、`assets`、`secrets` 和 `observability` 等其他欄位。確認它不會被 Git 追蹤：
+Keep the template's other fields, including `main`, `assets`, `secrets`, and `observability`. Confirm that Git ignores the production file:
 
 ```bash
 git check-ignore -v wrangler.production.jsonc
 ```
 
-網域、team name 與 AUD 通常不是密碼，但仍可能識別個人或基礎設施，所以本專案將 production config 一併視為 private。
+Domains, team names, and AUD values are not usually passwords, but they can identify a person or deployment. This project therefore treats the complete production configuration as private.
 
-## 7. 安全寫入 Worker secrets 並部署
+## 7. Write Worker secrets safely and deploy
 
-以下指令會互動式要求輸入值；不要把 secret 放在 command argument：
+These commands prompt for values interactively. Never place a secret in a command argument:
 
 ```bash
 npx wrangler secret put ACCESS_CLIENT_ID --config wrangler.production.jsonc
 npx wrangler secret put ACCESS_CLIENT_SECRET --config wrangler.production.jsonc
 ```
 
-先做 dry run，再正式部署 FE、Worker 與 custom domain：
+Run a dry run before deploying the frontend, Worker, and custom domain:
 
 ```bash
 npm run deploy:dry-run
 npm run deploy:cloudflare
 ```
 
-Static Assets 與 Worker 會一起部署，不需要 Cloudflare Pages project。靜態檔由 edge 提供，只有 `/ws`、`/healthz` 和 `/api/*` 會經 Worker 代理到 Tunnel origin。
+Static Assets and the Worker deploy together; no Cloudflare Pages project is required. The edge serves static files, while only `/ws`, `/healthz`, and `/api/*` are proxied through the Worker to the Tunnel origin.
 
-若只更新程式碼，保留 `wrangler.production.jsonc` 後再次執行 `npm run deploy:cloudflare` 即可；secrets 不需重複寫入。
+For later code-only updates, keep `wrangler.production.jsonc` and run `npm run deploy:cloudflare` again. Existing secrets do not need to be re-entered.
 
-## 8. 驗證完整路徑
+## 8. Verify the complete path
 
-依序檢查，避免把 Access、Tunnel 與 backend 問題混在一起：
+Check each layer in order so Access, Tunnel, and backend failures do not get mixed together:
 
 ```bash
-# 在 instance：必須成功
+# On the instance: must succeed
 curl http://127.0.0.1:7681/healthz
 
-# 在其他機器：origin 未帶 service token 必須被拒絕，而不是回 backend 200
+# From another machine: must be rejected without the service token,
+# rather than returning backend 200
 curl -i https://terminal-origin.example.com/healthz
 
-# 公開入口未登入時應導向 Access 或被拒絕
+# The public entry point should redirect to Access or reject the request
 curl -I https://code.example.com
 
-# Tunnel connector 狀態
+# Tunnel connector status
 npx wrangler tunnel info <TUNNEL_ID>
 ```
 
-最後用手機瀏覽器開啟 `https://code.example.com`：
+Finally, open `https://code.example.com` in a mobile browser:
 
-1. 完成 Access 登入。
-2. 確認右上角顯示已連線。
-3. 執行 `pwd`、`tmux display-message -p '#S'`。
-4. 啟動 `claude` 或 `codex`，測試互動、方向鍵、Ctrl-C 和外部 OAuth URL。
-5. 關閉分頁再重新開啟，確認原 tmux 工作仍在。
+1. Complete Access sign-in.
+2. Confirm that the top-right status shows a connection.
+3. Run `pwd` and `tmux display-message -p '#S'`.
+4. Start `claude` or `codex`; test interaction, arrow keys, Ctrl-C, and an external OAuth URL.
+5. Close and reopen the tab, then confirm that the original tmux work is still running.
 
-## 手機操作
+## Mobile usage
 
-- 快捷列最前方的 Claude 與 Codex 按鈕會以目前選定的模式一鍵開啟；再次點擊會切回既有的 tmux window。
-- 右上角的 `EN`／`繁中` 按鈕可切換 `en-US` 與 `zh-TW`；選擇會保存在目前瀏覽器。
-- 點「模式」可分別設定兩個 CLI 的啟動模式。選擇會保存在目前瀏覽器；停用安全防護的模式每次啟動前都會再次確認。
-- 點「上傳」可從手機選擇一個或多個檔案。上傳完成後，主機上的絕對路徑會放進底部輸入區，接著補上指令並按「執行」即可交給目前的 Claude／Codex。
-- 點終端機即可用手機鍵盤輸入。
-- 快捷列的 `Enter` 可直接確認互動式選單；底部輸入區空白時按「執行」也等同按下 Enter。
-- 在終端內容上單指上下滑動可查看先前輸出；固定 80 欄模式仍可左右滑動。
-- 快捷列提供 Ctrl、Alt、Esc、Tab、方向鍵與常用控制鍵組合。
-- 底部輸入區可接收 Wispr Flow 或系統語音輸入；「輸入」只送出文字，「執行」會再送出 Enter。
-- 工具列的欄寬按鈕可在自動符合畫面寬度與固定 80 欄之間切換。遇到 Claude Code 或 Codex TUI 在窄手機上跑版時，優先使用固定 80 欄並左右滑動查看。
-- 可用瀏覽器的「加入主畫面」取得更接近 App 的全螢幕體驗。
-- OAuth、文件或其他終端網址可直接點開。
+- The Claude and Codex buttons at the start of the toolbar open the selected mode with one tap. Tapping again returns to its existing tmux window.
+- The `EN` / `繁中` button switches the interface between `en-US` and `zh-TW`. The choice is saved in the current browser.
+- **Mode** configures the startup mode for each CLI. The choice is saved locally, while unsafe modes require confirmation every time they are started.
+- **Upload** selects one or more files. After upload, absolute paths on the instance appear in the bottom input area so you can append a command and run it with the active agent.
+- Tap the terminal to type with the mobile keyboard.
+- The toolbar's `Enter` confirms interactive menus. When the bottom input is empty, **Run** also sends Enter.
+- Swipe vertically over terminal content to inspect earlier output. Fixed 80-column mode also supports horizontal scrolling.
+- The toolbar includes Ctrl, Alt, Esc, Tab, arrow keys, and common control-key combinations.
+- The bottom input accepts system dictation or Wispr Flow. **Insert** sends text only; **Run** sends the text followed by Enter.
+- Toggle between automatic width and fixed 80 columns. Fixed width plus horizontal scrolling is often more reliable for Claude Code or Codex TUIs on narrow screens.
+- Add the site to the home screen for a more app-like full-screen experience.
+- OAuth, documentation, and other terminal URLs are directly clickable.
 
-登入憑證、repo 與命令執行都留在 instance；瀏覽器只接收終端輸出並傳送鍵盤事件。
+Login credentials, repositories, and command execution stay on the instance. The browser receives terminal output and sends keyboard events only.
 
-### AI 程式助理模式
+### AI coding-agent modes
 
-介面只會送出後端內建的允許模式，不接受瀏覽器提供任意指令或啟動參數：
+The client can select only backend-defined modes. It cannot supply an arbitrary command or startup argument.
 
-| CLI | 模式 | 實際啟動策略 |
+| CLI | Mode | Launch policy |
 | --- | --- | --- |
-| Claude Code | 一般 | `--permission-mode manual` |
-| Claude Code | 自動 | `--permission-mode auto` |
-| Claude Code | 規劃 | `--permission-mode plan` |
-| Claude Code | 略過檢查 | `--dangerously-skip-permissions` |
-| Codex CLI | 一般 | workspace-write sandbox，未信任命令需確認 |
-| Codex CLI | 唯讀 | read-only sandbox，不要求確認 |
-| Codex CLI | 自動 | workspace-write sandbox，不逐次詢問 |
-| Codex CLI | 完全存取 | `--dangerously-bypass-approvals-and-sandbox` |
+| Claude Code | Manual | `--permission-mode manual` |
+| Claude Code | Auto | `--permission-mode auto` |
+| Claude Code | Plan | `--permission-mode plan` |
+| Claude Code | Skip checks | `--dangerously-skip-permissions` |
+| Codex CLI | Standard | Workspace-write sandbox; asks before untrusted commands |
+| Codex CLI | Read only | Read-only sandbox; no approval prompts |
+| Codex CLI | Auto | Workspace-write sandbox; no per-command prompts |
+| Codex CLI | Full access | `--dangerously-bypass-approvals-and-sandbox` |
 
-「略過檢查」與「完全存取」只應在額外隔離、可承受完整主機權限的環境使用。手機上的模式切換不會動態修改已在執行中的 CLI，而是開啟或切換到對應的 tmux window，行為較可預期。
+Use **Skip checks** and **Full access** only in an additional isolation boundary where full host access is acceptable. Changing a mode on the phone does not mutate an already running CLI. Instead, it opens or switches to the tmux window for that agent/mode combination.
 
-### 手機上傳檔案
+### Mobile file uploads
 
-上傳走同一個受 Cloudflare Access 保護的 `/api/upload` 路徑，再由 Worker 經 Tunnel 寫入 instance。backend 會驗證 session、限制大小、清理檔名，並以 `0700` 目錄與 `0600` 檔案權限儲存。檔案不會自動加入 Git，也不會自動刪除；完成後可自行清理 `UPLOAD_DIR`。
+Uploads use the Access-protected `/api/upload` route and travel through the Worker and Tunnel to the instance. The backend validates the session, enforces size limits, sanitizes filenames, and stores directories with `0700` and files with `0600` permissions. Uploaded files are not added to Git or deleted automatically; clean `UPLOAD_DIR` when appropriate.
 
-### 多個持久化 session
+### Multiple persistent sessions
 
-介面上方的 session 分頁列可新增、切換與關閉多個開發工作。每個分頁各自保留終端輸出與指令草稿，所有分頁則共用一條 WebSocket，透過 session-tagged 訊息在 backend 分流到各自的 PTY。這可避免每新增一個分頁就重做 Access、Worker、Tunnel 與 WebSocket handshake；背景 session 仍會持續執行，關閉分頁也只會解除瀏覽器訂閱，不會終止對應的 tmux session。
+The session tab bar can create, switch, and close multiple development sessions. Each tab keeps its own terminal output and command draft. All tabs share one WebSocket, with session-tagged messages routed by the backend to the correct PTY. Background sessions continue running, and closing a tab unsubscribes the browser without terminating its tmux session.
 
-分頁清單會保存在目前瀏覽器，重新載入後自動恢復。連線包含 handshake timeout 與應用層 heartbeat；手機切換 App、頁面從 back-forward cache 恢復或網路重新上線時，前端會檢查共用連線並在必要時重新連線，再自動訂閱所有已開啟的 session。
+The tab list is stored in the current browser and restored after reload. The connection includes a handshake timeout and application-level heartbeat. When the phone changes apps, restores the page from the back-forward cache, or reconnects to the network, the client checks the shared connection, reconnects if needed, and resubscribes to every open session.
 
-預設 session 是 `main`。目前分頁也會同步到 query parameter，可直接建立或接回其他 session：
+The default session is `main`. The current tab is mirrored in the query parameter, so a link can create or reconnect to another session:
 
 ```text
 https://code.example.com/?session=my-project
 ```
 
-名稱只允許英數字、`_`、`-`，最長 64 字元。也可直接在 instance 管理專用 tmux server：
+Names may contain letters, digits, `_`, and `-`, up to 64 characters. You can also manage the dedicated tmux server directly on the instance:
 
 ```bash
 tmux -L remote-code-agent list-sessions
 tmux -L remote-code-agent attach -t main
 ```
 
-## 本機開發
+## Local development
 
-開兩個 terminal：
+Run two terminals:
 
 ```bash
-# Terminal 1：loopback backend
+# Terminal 1: loopback backend
 npm run dev
 
-# Terminal 2：Worker + Static Assets
+# Terminal 2: Worker + Static Assets
 npm run dev:cloudflare
 ```
 
-開啟 Wrangler 顯示的 localhost URL。本機 localhost 流量只會代理到 `LOCAL_ORIGIN_URL`，並略過 Access；部署後不會使用這條路徑。若需要本機 vars，可複製 `.dev.vars.example` 為 `.dev.vars`，但不要 commit `.dev.vars`。
+Open the localhost URL printed by Wrangler. Localhost traffic is proxied only to `LOCAL_ORIGIN_URL` and bypasses Access; the deployed application does not use this path. If you need local variables, copy `.dev.vars.example` to `.dev.vars`, but never commit `.dev.vars`.
 
-常用檢查：
+Useful checks:
 
 ```bash
 npm run check
@@ -361,61 +364,61 @@ npm run types:worker
 npm run build:client:production
 ```
 
-## 故障排除
+## Troubleshooting
 
-### 頁面正常但終端顯示未連線
+### The page loads, but the terminal is disconnected
 
-按順序檢查：
+Check these layers in order:
 
-1. instance 的 `curl http://127.0.0.1:7681/healthz`。
-2. Tunnel 是否 `Healthy`，Published application 是否指向正確 loopback port。
-3. origin Access policy 是否為 Service Auth，且 Worker secrets 對應同一組 token。
-4. Worker 的 `ORIGIN_URL` 是否與 origin hostname 完全一致。
-5. backend 的 `PUBLIC_HOSTNAME` 是否為公開 Worker hostname，而不是 origin hostname。
+1. `curl http://127.0.0.1:7681/healthz` on the instance.
+2. The Tunnel is `Healthy`, and its Published application points to the correct loopback port.
+3. The origin Access policy uses Service Auth, and the Worker secrets belong to that service token.
+4. The Worker's `ORIGIN_URL` exactly matches the origin hostname.
+5. The backend's `PUBLIC_HOSTNAME` is the public Worker hostname, not the origin hostname.
 
-macOS 若 Tunnel 顯示 `down`，確認常駐服務已啟動：
+If the Tunnel reports `down` on macOS, inspect the persistent service:
 
 ```bash
 launchctl print "gui/$(id -u)/io.remote-code-agent.tunnel"
 tail -n 100 "$HOME/Library/Logs/remote-code-agent-tunnel.error.log"
 ```
 
-查看 Worker 即時 log：
+Stream Worker logs with:
 
 ```bash
 npx wrangler tail --config wrangler.production.jsonc
 ```
 
-### 瀏覽器出現 401
+### The browser returns 401
 
-確認公開 hostname 已套用 Access application，`ACCESS_TEAM_DOMAIN` 是完整的 `https://...cloudflareaccess.com`，而 `ACCESS_AUD` 來自公開入口 application，不是 origin application。
+Confirm that the public hostname has an Access application, `ACCESS_TEAM_DOMAIN` is the full `https://...cloudflareaccess.com` domain, and `ACCESS_AUD` belongs to the public-entry application rather than the origin application.
 
-### origin 回 403、502 或無法連線
+### The origin returns 403, 502, or cannot connect
 
-- `403`：通常是 service token 或 origin Access policy 不匹配。
-- `502`：通常是 Tunnel connector 不健康、Published application 指錯 port，或 backend 沒有啟動。
-- instance 本機 health 成功但 Tunnel 失敗：檢查 cloudflared service log 與 ingress route。
+- `403` usually means the service token and origin Access policy do not match.
+- `502` usually means the Tunnel connector is unhealthy, the Published application points to the wrong port, or the backend is stopped.
+- If local health succeeds but the Tunnel fails, inspect the cloudflared service log and ingress route.
 
-### TUI 跑版或字元重疊
+### The TUI is misaligned or characters overlap
 
-切換成固定 80 欄、旋轉成橫向、重新整理頁面。終端會把 resize 傳到 PTY；tmux 與 TUI 需要幾秒重新繪製。若仍有殘影，可在 shell 執行 `reset`，或在程式內觸發完整 redraw。
+Switch to fixed 80 columns, rotate to landscape, and refresh. Terminal resizing propagates to the PTY, and tmux or a TUI may need a few seconds to redraw. If artifacts remain, run `reset` in the shell or trigger a full redraw in the application.
 
-## AI Agent 指引
+## AI agent guidance
 
-AI Agent 專用的開發、部署、使用驗收、安全限制與人工操作停駐點已集中在 [`AGENTS.md`](AGENTS.md)。人類不需要照著該文件逐項操作；若要把部署交給 Agent，請直接要求它先讀取並遵守 `AGENTS.md`，同時提供文件列出的必要部署資訊。
+Development, deployment, acceptance, safety limits, and human handoff requirements for AI agents are centralized in [`AGENTS.md`](AGENTS.md). Human operators do not need to execute that file step by step. To delegate a deployment, tell the agent to read and follow `AGENTS.md`, then provide the required deployment inputs listed there.
 
-## 機密與個資清單
+## Secrets and personal data
 
-以下內容永遠不應 commit：
+Never commit any of the following:
 
-- `.env`、`.dev.vars` 和任何 local override
-- `wrangler.production.jsonc` 與 private Wrangler configs
-- Cloudflare API token、Access service token、Tunnel token 與 credentials JSON
-- `cert.pem`、private keys、service-account files
-- Claude Code、Codex、npm、GitHub 或其他 CLI 的 login credentials
-- 實際 email、私人網域、account／zone／tunnel IDs，以及其他可識別部署的值
+- `.env`, `.dev.vars`, or any local override
+- `wrangler.production.jsonc` or another private Wrangler configuration
+- Cloudflare API tokens, Access service tokens, Tunnel tokens, or credentials JSON
+- `cert.pem`, private keys, or service-account files
+- Claude Code, Codex, npm, GitHub, or other CLI login credentials
+- Real email addresses, private domains, account/zone/Tunnel IDs, or other deployment-identifying values
 
-commit 前至少執行：
+At minimum, run these checks before committing:
 
 ```bash
 git status --short --ignored
@@ -423,33 +426,33 @@ git diff --cached
 git grep --cached -n -I -E 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|[[:xdigit:]]{32}\.access|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}' -- .
 ```
 
-最後一個指令沒有輸出才是預期結果。即使 `.gitignore` 已設定，也不要用 `git add -f` 強制加入 private files。
+The final command should print nothing. Never use `git add -f` to add a private file even when `.gitignore` is configured.
 
-## 專案結構
+## Project structure
 
 ```text
-src/server.ts                 loopback PTY/WebSocket backend
-src/worker.ts                 Access JWT 驗證、assets 與 Tunnel proxy
-src/client.ts                 xterm.js mobile client
-src/client.css                responsive UI
-config/tmux.conf              detached session 設定
+src/server.ts                     loopback PTY/WebSocket backend
+src/worker.ts                     Access JWT validation, assets, and Tunnel proxy
+src/client.ts                     xterm.js mobile client
+src/client.css                    responsive interface
+config/tmux.conf                  detached-session configuration
 scripts/install-user-service.sh   Linux systemd installer
 scripts/install-macos-service.sh  macOS LaunchAgent installer
-AGENTS.md                     AI Agent 開發、部署與驗收指引
-wrangler.jsonc                可公開的安全範本
-wrangler.production.jsonc     本機 production 設定，已 gitignore
+AGENTS.md                         AI-agent development and deployment guidance
+wrangler.jsonc                    sanitized public template
+wrangler.production.jsonc         ignored local production configuration
 ```
 
-## 貢獻與安全
+## Contributing and security
 
-歡迎 bug fix、文件改善與範圍明確的功能提案。開始前請閱讀 [`CONTRIBUTING.md`](CONTRIBUTING.md)；所有 pull request 都必須通過 `npm run check`，且不得包含 production hostname、email、token、credential 或其他可識別部署的資料。
+Bug fixes, documentation improvements, and well-scoped feature proposals are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before starting. Every pull request must pass `npm run check` and must not contain a production hostname, email address, token, credential, or other deployment-identifying data.
 
-安全漏洞請依 [`SECURITY.md`](SECURITY.md) 私下回報，不要建立公開 issue。社群互動適用 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
+Report vulnerabilities privately according to [`SECURITY.md`](SECURITY.md); do not open a public issue. Community participation is governed by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 
-專案原始碼採用 [MIT License](LICENSE)。第三方套件仍適用各自的授權；確切版本記錄於 `package-lock.json`。
+The project source is available under the [MIT License](LICENSE). Third-party packages remain subject to their own licenses; exact versions are recorded in `package-lock.json`.
 
-`package.json` 的 `"private": true` 是為了避免把這個可部署應用程式誤發佈到 npm，不限制依 MIT License 使用、修改或散布原始碼。
+`"private": true` in `package.json` prevents accidental publication of this deployable application to npm. It does not restrict use, modification, or distribution under the MIT License.
 
-Remote Code Agent 是獨立的社群專案，並非 Anthropic、Cloudflare 或 OpenAI 的官方產品，也未獲其背書。
+Remote Code Agent is an independent community project. It is not an official product of, or endorsed by, Anthropic, Cloudflare, or OpenAI.
