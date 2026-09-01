@@ -42,7 +42,7 @@
     "esbuild": "^0.28.1",
     "tsx": "^4.23.9",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wrangler": "^4.119.0"
   },
   "overrides": {
