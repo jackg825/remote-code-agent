@@ -39,7 +39,7 @@
     "@cloudflare/vitest-pool-workers": "^0.20.2",
     "@types/node": "^22.19.11",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.9",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
